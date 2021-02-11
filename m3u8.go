@@ -276,6 +276,8 @@ func SimpleDownload(list, dir string, concurrent int) (err error) {
 	urlDir := list[:len(list)-len(path.Base(list))]
 	// 并发下载
 	exit := make(chan struct{})
+	errors := make(chan error, concurrent+1)
+	defer close(errors)
 	tasks := make(chan string, concurrent+1)
 	defer close(tasks)
 	var wait sync.WaitGroup
@@ -286,13 +288,16 @@ func SimpleDownload(list, dir string, concurrent int) (err error) {
 			defer wait.Done()
 			defer exitOnce.Do(func() {
 				close(exit)
+				errors <- nil
 			})
 			var _url *url.URL
+			var err error
 			for {
 				select {
 				case task := <-tasks:
 					_url, err = url.Parse(task)
 					if err != nil {
+						errors <- err
 						return
 					}
 					if task[0] == '/' {
@@ -303,6 +308,7 @@ func SimpleDownload(list, dir string, concurrent int) (err error) {
 					}
 					err = saveTS(task, dir)
 					if err != nil {
+						errors <- err
 						return
 					}
 				case <-exit:
@@ -315,12 +321,18 @@ func SimpleDownload(list, dir string, concurrent int) (err error) {
 	go func() {
 		defer exitOnce.Do(func() {
 			close(exit)
+			errors <- nil
 		})
 		var line []byte
+		var err error
 		reader := NewReader(file, nil)
 		for {
 			line, err = reader.ReadLine()
-			if err != nil || line == nil {
+			if err != nil {
+				errors <- err
+				return
+			}
+			if line == nil {
 				return
 			}
 			if len(line) == 0 {
@@ -335,7 +347,7 @@ func SimpleDownload(list, dir string, concurrent int) (err error) {
 					// duration
 					i := bytes.IndexByte(p, ',')
 					if i < 0 {
-						err = fmt.Errorf("invalid tag '%s', can't find ','", string(line))
+						errors <- fmt.Errorf("invalid tag '%s', can't find ','", string(line))
 						return
 					}
 					p = p[i+1:]
@@ -355,7 +367,7 @@ func SimpleDownload(list, dir string, concurrent int) (err error) {
 						return
 					}
 				} else {
-					err = fmt.Errorf("invalid tag '%s'", string(line))
+					errors <- fmt.Errorf("invalid tag '%s'", string(line))
 					return
 				}
 			}
@@ -364,6 +376,7 @@ func SimpleDownload(list, dir string, concurrent int) (err error) {
 	// 等待错误或完成退出
 	<-exit
 	wait.Wait()
+	err = <-errors
 	return
 }
 
