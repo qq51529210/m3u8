@@ -45,7 +45,7 @@ const (
 )
 
 var (
-	tagEXTINF                  = []byte(TagEXTM3U)
+	tagEXTINF                  = []byte(TagEXTINF)
 	tagEXT_X_BYTERANGE         = []byte(TagEXT_X_BYTERANGE)
 	tagEXT_X_DISCONTINUITY     = []byte(TagEXT_X_DISCONTINUITY)
 	tagEXT_X_KEY               = []byte(TagEXT_X_KEY)
