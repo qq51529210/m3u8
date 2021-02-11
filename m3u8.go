@@ -2,7 +2,17 @@
 // https://tools.ietf.org/html/rfc8216
 package m3u8
 
-import "io"
+import (
+	"bytes"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"os"
+	"path"
+	"path/filepath"
+	"sync"
+)
 
 const (
 	ContentType = "application/vnd.apple.mpegurl"
@@ -32,6 +42,33 @@ const (
 	TagEXT_X_SESSION_KEY          = "#EXT-X-SESSION-KEY"
 	TagEXT_X_INDEPENDENT_SEGMENTS = "#EXT-X-INDEPENDENT-SEGMENTS"
 	TagEXT_X_START                = "#EXT-X-START"
+)
+
+var (
+	tagEXTINF                  = []byte(TagEXTM3U)
+	tagEXT_X_BYTERANGE         = []byte(TagEXT_X_BYTERANGE)
+	tagEXT_X_DISCONTINUITY     = []byte(TagEXT_X_DISCONTINUITY)
+	tagEXT_X_KEY               = []byte(TagEXT_X_KEY)
+	tagEXT_X_MAP               = []byte(TagEXT_X_MAP)
+	tagEXT_X_PROGRAM_DATE_TIME = []byte(TagEXT_X_PROGRAM_DATE_TIME)
+	tagEXT_X_DATERANGE         = []byte(TagEXT_X_DATERANGE)
+	// media playlist tags
+	tagEXT_X_TARGETDURATION         = []byte(TagEXT_X_TARGETDURATION)
+	tagEXT_X_MEDIA_SEQUENCE         = []byte(TagEXT_X_MEDIA_SEQUENCE)
+	tagEXT_X_DISCONTINUITY_SEQUENCE = []byte(TagEXT_X_DISCONTINUITY_SEQUENCE)
+	tagEXT_X_ENDLIST                = []byte(TagEXT_X_ENDLIST)
+	tagEXT_X_PLAYLIST_TYPE          = []byte(TagEXT_X_PLAYLIST_TYPE)
+	tagEXT_X_I_FRAMES_ONLY          = []byte(TagEXT_X_I_FRAMES_ONLY)
+	// master playlist tags
+	tagEXT_X_MEDIA                = []byte(TagEXT_X_MEDIA)
+	tagEXT_X_STREAM_INF           = []byte(TagEXT_X_STREAM_INF)
+	tagEXT_X_I_FRAME_STREAM_INF   = []byte(TagEXT_X_I_FRAME_STREAM_INF)
+	tagEXT_X_SESSION_DATA         = []byte(TagEXT_X_SESSION_DATA)
+	tagEXT_X_SESSION_KEY          = []byte(TagEXT_X_SESSION_KEY)
+	tagEXT_X_INDEPENDENT_SEGMENTS = []byte(TagEXT_X_INDEPENDENT_SEGMENTS)
+	tagEXT_X_START                = []byte(TagEXT_X_START)
+	// empty slice
+	emptySlice = make([]byte, 0)
 )
 
 type EXTINF struct {
@@ -146,111 +183,6 @@ type MediaPlayList struct {
 	EXT_X_ENDLIST                bool
 }
 
-func (mpl *MediaPlayList) Encode(w io.Writer) (err error) {
-	mpl.writer.SetWriter(w)
-	_, err = mpl.writer.EXTM3U()
-	if err != nil {
-		return
-	}
-	if mpl.EXT_X_VERSION != "" {
-		_, err = mpl.writer.EXT_X_VERSION(mpl.EXT_X_VERSION)
-		if err != nil {
-			return
-		}
-	}
-	if mpl.EXT_X_TARGETDURATION != "" {
-		_, err = mpl.writer.EXT_X_TARGETDURATION(mpl.EXT_X_TARGETDURATION)
-		if err != nil {
-			return
-		}
-	}
-	if mpl.EXT_X_MEDIA_SEQUENCE != "" {
-		_, err = mpl.writer.EXT_X_MEDIA_SEQUENCE(mpl.EXT_X_MEDIA_SEQUENCE)
-		if err != nil {
-			return
-		}
-	}
-	if mpl.EXT_X_DISCONTINUITY_SEQUENCE != "" {
-		_, err = mpl.writer.EXT_X_DISCONTINUITY_SEQUENCE(mpl.EXT_X_DISCONTINUITY_SEQUENCE)
-		if err != nil {
-			return
-		}
-	}
-	if mpl.EXT_X_PLAYLIST_TYPE != "" {
-		_, err = mpl.writer.EXT_X_PLAYLIST_TYPE(mpl.EXT_X_PLAYLIST_TYPE)
-		if err != nil {
-			return
-		}
-	}
-	if mpl.EXT_X_I_FRAMES_ONLY {
-		_, err = mpl.writer.EXT_X_I_FRAMES_ONLY()
-		if err != nil {
-			return
-		}
-	}
-	if mpl.EXT_X_INDEPENDENT_SEGMENTS {
-		_, err = mpl.writer.EXT_X_INDEPENDENT_SEGMENTS()
-		if err != nil {
-			return
-		}
-	}
-	if mpl.EXT_X_START != nil {
-		_, err = mpl.writer.EXT_X_START(mpl.EXT_X_START)
-		if err != nil {
-			return
-		}
-	}
-	for i := 0; i < len(mpl.MediaSegment); i++ {
-		_, err = mpl.writer.EXTINF(&mpl.MediaSegment[i].EXTINF)
-		if err != nil {
-			return
-		}
-		if mpl.MediaSegment[i].EXT_X_BYTERANGE != nil {
-			_, err = mpl.writer.EXT_X_BYTERANGE(mpl.MediaSegment[i].EXT_X_BYTERANGE)
-			if err != nil {
-				return
-			}
-		}
-		if mpl.MediaSegment[i].EXT_X_DISCONTINUITY {
-			_, err = mpl.writer.EXT_X_DISCONTINUITY()
-			if err != nil {
-				return
-			}
-		}
-		if mpl.MediaSegment[i].EXT_X_KEY != nil {
-			_, err = mpl.writer.EXT_X_KEY(mpl.MediaSegment[i].EXT_X_KEY)
-			if err != nil {
-				return
-			}
-		}
-		if mpl.MediaSegment[i].EXT_X_MAP != nil {
-			_, err = mpl.writer.EXT_X_MAP(mpl.MediaSegment[i].EXT_X_MAP)
-			if err != nil {
-				return
-			}
-		}
-		if mpl.MediaSegment[i].EXT_X_PROGRAM_DATE_TIME != "" {
-			_, err = mpl.writer.EXT_X_PROGRAM_DATE_TIME(mpl.MediaSegment[i].EXT_X_PROGRAM_DATE_TIME)
-			if err != nil {
-				return
-			}
-		}
-		if mpl.MediaSegment[i].EXT_X_DATERANGE != nil {
-			_, err = mpl.writer.EXT_X_DATERANGE(mpl.MediaSegment[i].EXT_X_DATERANGE)
-			if err != nil {
-				return
-			}
-		}
-	}
-	if mpl.EXT_X_ENDLIST {
-		_, err = mpl.writer.EXT_X_ENDLIST()
-		if err != nil {
-			return
-		}
-	}
-	return
-}
-
 type MasterPlayList struct {
 	writer                     Writer
 	EXT_X_VERSION              string
@@ -263,59 +195,221 @@ type MasterPlayList struct {
 	EXT_X_START                *EXT_X_START
 }
 
-func (mpl *MasterPlayList) Encode(w io.Writer) (err error) {
-	mpl.writer.SetWriter(w)
-	_, err = mpl.writer.EXTM3U()
+func ParseLine(line []byte) (tag, value []byte) {
+	i := bytes.IndexByte(line, ':')
+	if i < 0 {
+		return line, emptySlice
+	}
+	return line[:i], line[i+1:]
+}
+
+func ParseAttribute(line []byte) (map[string]string, error) {
+	m := make(map[string]string)
+	i := 0
+	for {
+		// name=value
+		i = bytes.IndexByte(line, '=')
+		if i < 0 {
+			return nil, fmt.Errorf("incomplete attribute '%s', can't find '='", string(line))
+		}
+		// name
+		name := string(line[:i])
+		// value...
+		line = line[i+1:]
+		if len(line) < 0 {
+			// name=
+			return nil, fmt.Errorf("incomplete attribute '%s', can't find <value>", string(line))
+		}
+		if line[0] == '"' {
+			i = indexString(line)
+			if i < 0 {
+				// name="...
+				return m, fmt.Errorf("incomplete attribute '%s', can't find end '\"'", string(line))
+			} else {
+				// name="..."
+				m[name] = string(line[:i])
+				p := line[i+1:]
+				if len(p) > 0 {
+					if p[0] != ',' {
+						return m, fmt.Errorf("incomplete attribute, can't find ',' after '%s'", string(line), line[:i])
+					}
+					line = p[1:]
+				} else {
+					return m, nil
+				}
+			}
+		} else {
+			i = bytes.IndexByte(line, ',')
+			if i < 0 {
+				m[name] = string(line)
+				return m, nil
+			} else {
+				m[name] = string(line[:i])
+				line = line[i+1:]
+				if len(line) <= 0 {
+					return m, nil
+				}
+			}
+		}
+	}
+}
+
+func indexString(s []byte) int {
+	for i := 1; i < len(s); i++ {
+		if s[i] == '"' && s[i-1] != '\\' {
+			return i
+		}
+	}
+	return -1
+}
+
+func SimpleDownload(list, dir string, concurrent int) error {
+	// 创建目录
+	err := os.MkdirAll(dir, os.ModePerm)
 	if err != nil {
-		return
+		return err
 	}
-	if mpl.EXT_X_VERSION != "" {
-		_, err = mpl.writer.EXT_X_VERSION(mpl.EXT_X_VERSION)
-		if err != nil {
-			return
+	// 保存m3u8列表文件
+	file, err := saveM3U8(list, dir)
+	defer file.Close()
+	urlDir := list[:len(list)-len(path.Base(list))]
+	// 并发下载
+	exit := make(chan struct{})
+	errors := make(chan error, concurrent+1)
+	defer close(errors)
+	tasks := make(chan string, concurrent+1)
+	defer close(tasks)
+	var wait sync.WaitGroup
+	for i := 0; i < concurrent; i++ {
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			var _url *url.URL
+			for {
+				select {
+				case task := <-tasks:
+					_url, err = url.Parse(task)
+					if err != nil {
+						errors <- err
+						return
+					}
+					if task[0] == '/' {
+						task = task[1:]
+					}
+					if _url.Scheme == "" {
+						task = urlDir + task
+					}
+					err = saveTS(task, dir)
+					if err != nil {
+						errors <- err
+						return
+					}
+				case <-exit:
+					return
+				}
+			}
+		}()
+	}
+	// 读取每一行，创建下载任务
+	go func() {
+		defer close(exit)
+		var line []byte
+		reader := NewReader(file, nil)
+		for {
+			line, err = reader.ReadLine()
+			if err != nil {
+				errors <- err
+				return
+			}
+			if line == nil {
+				return
+			}
+			if len(line) == 0 {
+				continue
+			}
+			// 只要片段
+			if bytes.HasPrefix(line, tagEXTINF) {
+				line = line[len(tagEXTINF):]
+				// ':'
+				if line[0] == ':' {
+					// duration
+					i := bytes.IndexByte(line[1:], ',')
+					if i < 0 {
+						errors <- fmt.Errorf("invalid tag '%s'", string(line))
+						return
+					}
+					line = line[i+1:]
+					// title
+					for len(line) == 0 {
+						// 再读一行
+						line, err = reader.ReadLine()
+						if err != nil {
+							errors <- err
+							return
+						}
+					}
+					// 添加任务
+					select {
+					case tasks <- string(line):
+					case <-exit:
+						return
+					}
+				} else {
+					errors <- fmt.Errorf("invalid tag '%s'", string(line))
+					return
+				}
+			}
 		}
+	}()
+	// 等待错误或完成退出
+	select {
+	case err = <-errors:
+		close(exit)
+	case <-exit:
 	}
-	for i := 0; i < len(mpl.EXT_X_MEDIA); i++ {
-		_, err = mpl.writer.EXT_X_MEDIA(&mpl.EXT_X_MEDIA[i])
-		if err != nil {
-			return
-		}
+	wait.Wait()
+	// 返回
+	return err
+}
+
+func saveM3U8(url, dir string) (*os.File, error) {
+	// 下载
+	rs, err := http.Get(url)
+	if err != nil {
+		return nil, err
 	}
-	for i := 0; i < len(mpl.EXT_X_STREAM_INF); i++ {
-		_, err = mpl.writer.EXT_X_STREAM_INF(&mpl.EXT_X_STREAM_INF[i])
-		if err != nil {
-			return
-		}
+	defer rs.Body.Close()
+	// 打开列表文件
+	var file *os.File
+	file, err = os.OpenFile(filepath.Join(dir, path.Base(url)), os.O_CREATE|os.O_TRUNC|os.O_RDWR, os.ModePerm)
+	if err != nil {
+		return nil, err
 	}
-	for i := 0; i < len(mpl.EXT_X_I_FRAME_STREAM_INF); i++ {
-		_, err = mpl.writer.EXT_X_I_FRAME_STREAM_INF(&mpl.EXT_X_I_FRAME_STREAM_INF[i])
-		if err != nil {
-			return
-		}
+	// 保存
+	_, err = io.Copy(file, rs.Body)
+	if err != nil {
+		file.Close()
+		return nil, err
 	}
-	for i := 0; i < len(mpl.EXT_X_SESSION_DATA); i++ {
-		_, err = mpl.writer.EXT_X_SESSION_DATA(&mpl.EXT_X_SESSION_DATA[i])
-		if err != nil {
-			return
-		}
+	file.Seek(0, 0)
+	return file, nil
+}
+
+func saveTS(url, dir string) error {
+	// 下载
+	rs, err := http.Get(url)
+	if err != nil {
+		return err
 	}
-	if mpl.EXT_X_SESSION_KEY != nil {
-		_, err = mpl.writer.EXT_X_SESSION_KEY(mpl.EXT_X_SESSION_KEY)
-		if err != nil {
-			return
-		}
+	defer rs.Body.Close()
+	// 打开列表文件
+	var file *os.File
+	file, err = os.OpenFile(filepath.Join(dir, path.Base(url)), os.O_CREATE|os.O_TRUNC|os.O_WRONLY, os.ModePerm)
+	if err != nil {
+		return err
 	}
-	if mpl.EXT_X_INDEPENDENT_SEGMENTS {
-		_, err = mpl.writer.EXT_X_INDEPENDENT_SEGMENTS()
-		if err != nil {
-			return
-		}
-	}
-	if mpl.EXT_X_START != nil {
-		_, err = mpl.writer.EXT_X_START(mpl.EXT_X_START)
-		if err != nil {
-			return
-		}
-	}
-	return
+	defer file.Close()
+	// 保存
+	_, err = io.Copy(file, rs.Body)
+	return err
 }
