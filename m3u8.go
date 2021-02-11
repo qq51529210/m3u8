@@ -263,34 +263,36 @@ func indexString(s []byte) int {
 	return -1
 }
 
-func SimpleDownload(list, dir string, concurrent int) error {
+func SimpleDownload(list, dir string, concurrent int) (err error) {
 	// 创建目录
-	err := os.MkdirAll(dir, os.ModePerm)
+	err = os.MkdirAll(dir, os.ModePerm)
 	if err != nil {
 		return err
 	}
 	// 保存m3u8列表文件
-	file, err := saveM3U8(list, dir)
+	var file *os.File
+	file, err = saveM3U8(list, dir)
 	defer file.Close()
 	urlDir := list[:len(list)-len(path.Base(list))]
 	// 并发下载
 	exit := make(chan struct{})
-	errors := make(chan error, concurrent+1)
-	defer close(errors)
 	tasks := make(chan string, concurrent+1)
 	defer close(tasks)
 	var wait sync.WaitGroup
+	var exitOnce sync.Once
 	for i := 0; i < concurrent; i++ {
 		wait.Add(1)
 		go func() {
 			defer wait.Done()
+			defer exitOnce.Do(func() {
+				close(exit)
+			})
 			var _url *url.URL
 			for {
 				select {
 				case task := <-tasks:
 					_url, err = url.Parse(task)
 					if err != nil {
-						errors <- err
 						return
 					}
 					if task[0] == '/' {
@@ -301,7 +303,6 @@ func SimpleDownload(list, dir string, concurrent int) error {
 					}
 					err = saveTS(task, dir)
 					if err != nil {
-						errors <- err
 						return
 					}
 				case <-exit:
@@ -312,16 +313,14 @@ func SimpleDownload(list, dir string, concurrent int) error {
 	}
 	// 读取每一行，创建下载任务
 	go func() {
-		defer close(exit)
+		defer exitOnce.Do(func() {
+			close(exit)
+		})
 		var line []byte
 		reader := NewReader(file, nil)
 		for {
 			line, err = reader.ReadLine()
-			if err != nil {
-				errors <- err
-				return
-			}
-			if line == nil {
+			if err != nil || line == nil {
 				return
 			}
 			if len(line) == 0 {
@@ -336,7 +335,7 @@ func SimpleDownload(list, dir string, concurrent int) error {
 					// duration
 					i := bytes.IndexByte(p, ',')
 					if i < 0 {
-						errors <- fmt.Errorf("invalid tag '%s', can't find ','", string(line))
+						err = fmt.Errorf("invalid tag '%s', can't find ','", string(line))
 						return
 					}
 					p = p[i+1:]
@@ -345,7 +344,6 @@ func SimpleDownload(list, dir string, concurrent int) error {
 						// 再读一行
 						line, err = reader.ReadLine()
 						if err != nil {
-							errors <- err
 							return
 						}
 						p = line
@@ -357,21 +355,16 @@ func SimpleDownload(list, dir string, concurrent int) error {
 						return
 					}
 				} else {
-					errors <- fmt.Errorf("invalid tag '%s'", string(line))
+					err = fmt.Errorf("invalid tag '%s'", string(line))
 					return
 				}
 			}
 		}
 	}()
 	// 等待错误或完成退出
-	select {
-	case err = <-errors:
-		close(exit)
-	case <-exit:
-	}
+	<-exit
 	wait.Wait()
-	// 返回
-	return err
+	return
 }
 
 func saveM3U8(url, dir string) (*os.File, error) {
@@ -382,6 +375,9 @@ func saveM3U8(url, dir string) (*os.File, error) {
 		return nil, err
 	}
 	defer rs.Body.Close()
+	if rs.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("http status code '%d'", rs.StatusCode)
+	}
 	// 打开列表文件
 	var file *os.File
 	file, err = os.OpenFile(filepath.Join(dir, path.Base(url)), os.O_CREATE|os.O_TRUNC|os.O_RDWR, os.ModePerm)
@@ -406,6 +402,9 @@ func saveTS(url, dir string) error {
 		return err
 	}
 	defer rs.Body.Close()
+	if rs.StatusCode != http.StatusOK {
+		return fmt.Errorf("http status code '%d'", rs.StatusCode)
+	}
 	// 打开列表文件
 	var file *os.File
 	file, err = os.OpenFile(filepath.Join(dir, path.Base(url)), os.O_CREATE|os.O_TRUNC|os.O_WRONLY, os.ModePerm)
