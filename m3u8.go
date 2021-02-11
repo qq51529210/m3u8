@@ -231,7 +231,7 @@ func ParseAttribute(line []byte) (map[string]string, error) {
 				p := line[i+1:]
 				if len(p) > 0 {
 					if p[0] != ',' {
-						return m, fmt.Errorf("incomplete attribute, can't find ',' after '%s'", string(line), line[:i])
+						return m, fmt.Errorf("incomplete attribute, can't find ',' after '%s'", line[:i])
 					}
 					line = p[1:]
 				} else {
@@ -329,28 +329,30 @@ func SimpleDownload(list, dir string, concurrent int) error {
 			}
 			// 只要片段
 			if bytes.HasPrefix(line, tagEXTINF) {
-				line = line[len(tagEXTINF):]
+				p := line[len(tagEXTINF):]
 				// ':'
-				if line[0] == ':' {
+				if p[0] == ':' {
+					p = p[1:]
 					// duration
-					i := bytes.IndexByte(line[1:], ',')
+					i := bytes.IndexByte(p, ',')
 					if i < 0 {
-						errors <- fmt.Errorf("invalid tag '%s'", string(line))
+						errors <- fmt.Errorf("invalid tag '%s', can't find ','", string(line))
 						return
 					}
-					line = line[i+1:]
+					p = p[i+1:]
 					// title
-					for len(line) == 0 {
+					for len(p) == 0 {
 						// 再读一行
 						line, err = reader.ReadLine()
 						if err != nil {
 							errors <- err
 							return
 						}
+						p = line
 					}
 					// 添加任务
 					select {
-					case tasks <- string(line):
+					case tasks <- string(p):
 					case <-exit:
 						return
 					}
