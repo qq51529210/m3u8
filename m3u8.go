@@ -375,6 +375,7 @@ func SimpleDownload(list, dir string, concurrent int) error {
 }
 
 func saveM3U8(url, dir string) (*os.File, error) {
+	fmt.Println("download", url, "to", dir)
 	// 下载
 	rs, err := http.Get(url)
 	if err != nil {
@@ -398,6 +399,7 @@ func saveM3U8(url, dir string) (*os.File, error) {
 }
 
 func saveTS(url, dir string) error {
+	fmt.Println("download", url, "to", dir)
 	// 下载
 	rs, err := http.Get(url)
 	if err != nil {
