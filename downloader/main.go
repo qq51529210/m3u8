@@ -9,12 +9,16 @@ import (
 )
 
 func main() {
-	if len(os.Args) > 2 {
+	if len(os.Args) > 1 {
 		dir := filepath.Join(filepath.Dir(os.Args[0]), "m3u8")
 		fmt.Println(dir)
-		err := m3u8.SimpleDownload(os.Args[1], dir, 5)
-		if err != nil {
-			fmt.Println(err)
+		for {
+			err := m3u8.SimpleDownload(os.Args[1], dir, 5)
+			if err != nil {
+				fmt.Println(err)
+				continue
+			}
+			break
 		}
 	}
 }

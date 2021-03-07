@@ -370,6 +370,8 @@ func SimpleDownload(list, dir string, concurrent int) (err error) {
 					errors <- fmt.Errorf("invalid tag '%s'", string(line))
 					return
 				}
+			} else if bytes.Compare(line, tagEXT_X_ENDLIST) == 0 {
+				return
 			}
 		}
 	}()
@@ -409,6 +411,17 @@ func saveM3U8(url, dir string) (*os.File, error) {
 
 func saveTS(url, dir string) error {
 	fmt.Println("download", url, "to", dir)
+	// 文件是否存在
+	tsPath := filepath.Join(dir, path.Base(url))
+	_, err := os.Stat(tsPath)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			return err
+		}
+	} else {
+		fmt.Println(tsPath, "exist")
+		return nil
+	}
 	// 下载
 	rs, err := http.Get(url)
 	if err != nil {
@@ -418,14 +431,16 @@ func saveTS(url, dir string) error {
 	if rs.StatusCode != http.StatusOK {
 		return fmt.Errorf("http status code '%d'", rs.StatusCode)
 	}
-	// 打开列表文件
-	var file *os.File
-	file, err = os.OpenFile(filepath.Join(dir, path.Base(url)), os.O_CREATE|os.O_TRUNC|os.O_WRONLY, os.ModePerm)
+	// 打开文件
+	file, err := os.OpenFile(tsPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, os.ModePerm)
 	if err != nil {
 		return err
 	}
 	defer file.Close()
 	// 保存
 	_, err = io.Copy(file, rs.Body)
+	if err != nil {
+		os.Remove(tsPath)
+	}
 	return err
 }
