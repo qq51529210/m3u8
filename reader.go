@@ -30,7 +30,7 @@ func (r *Reader) SetReader(reader io.Reader) {
 	r.reader = reader
 }
 
-// 读取一行数据
+// 读取一行数据，返回的数据，外部需要拷贝
 func (r *Reader) ReadLine() ([]byte, error) {
 	// 从缓存中读取数据
 	p := r.readData()
@@ -51,6 +51,13 @@ func (r *Reader) ReadLine() ([]byte, error) {
 				r.dIdx = 0
 				r.pIdx = 0
 				r.dLen = 0
+				if len(p) > 0 {
+					n = len(p) - 1
+					if p[n] == '\n' {
+						p = p[:n]
+					}
+					return r.checkEnter(p), nil
+				}
 			}
 			return nil, err
 		}
@@ -60,10 +67,10 @@ func (r *Reader) ReadLine() ([]byte, error) {
 			i := bytes.IndexByte(r.buff[:n], '\n')
 			if i >= 0 {
 				p = r.checkEnter(r.buff[:i])
-				if p != nil {
-					// 添加buff[m:n]到data
-					r.appendData(r.buff[i+1 : n])
-					// 返回
+				// 添加buff[m:n]到data
+				r.appendData(r.buff[i+1 : n])
+				// 返回
+				if len(p) > 0 {
 					return p, nil
 				}
 			}
