@@ -69,7 +69,7 @@ func (d *downloader) downloadList() ([]string, error) {
 	}
 	defer rs.Body.Close()
 	if rs.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("http status code '%d'", rs.StatusCode)
+		return nil, fmt.Errorf("download list '%s' http status code '%d'", d.url, rs.StatusCode)
 	}
 	// 保存
 	filePath := filepath.Join(d.dir, path.Base(d.url))
