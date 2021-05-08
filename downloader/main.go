@@ -175,7 +175,6 @@ func (d *downloader) downloadTSRoutine() {
 			continue
 		}
 		if _url.Scheme != "" {
-			_url.Path = path.Join(_url.Path, ts)
 			ts = _url.String()
 		} else {
 			ts = d.urlDir.String() + "/" + ts
